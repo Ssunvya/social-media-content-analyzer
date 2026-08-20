@@ -1,9 +1,11 @@
 from flask import Flask, render_template, request
 import os
 import uuid
+
 import pymupdf
 import pytesseract
 from PIL import Image
+
 
 app = Flask(__name__)
 
@@ -11,16 +13,31 @@ UPLOAD_FOLDER = "uploads"
 ALLOWED_EXTENSIONS = {"pdf", "png", "jpg", "jpeg"}
 
 app.config["UPLOAD_FOLDER"] = UPLOAD_FOLDER
-app.config["MAX_CONTENT_LENGTH"] = 10 * 1024 * 1024  # 10 MB maximum
+app.config["MAX_CONTENT_LENGTH"] = 10 * 1024 * 1024  # 10 MB
 
 os.makedirs(UPLOAD_FOLDER, exist_ok=True)
 
-# Windows Tesseract location
-pytesseract.pytesseract.tesseract_cmd = (
-    r"C:\Program Files\Tesseract-OCR\tesseract.exe"
-)
+
+# ---------------------------------------------------------
+# TESSERACT CONFIGURATION
+# ---------------------------------------------------------
+# On Windows, use the normal Tesseract installation path.
+# On Render/Linux, Tesseract is normally available as:
+# /usr/bin/tesseract
+
+if os.name == "nt":
+    windows_tesseract = r"C:\Program Files\Tesseract-OCR\tesseract.exe"
+
+    if os.path.exists(windows_tesseract):
+        pytesseract.pytesseract.tesseract_cmd = windows_tesseract
+else:
+    # Linux / Render
+    pytesseract.pytesseract.tesseract_cmd = "tesseract"
 
 
+# ---------------------------------------------------------
+# FILE VALIDATION
+# ---------------------------------------------------------
 def allowed_file(filename):
     return (
         "." in filename
@@ -28,10 +45,14 @@ def allowed_file(filename):
     )
 
 
+# ---------------------------------------------------------
+# CONTENT ANALYSIS
+# ---------------------------------------------------------
 def analyze_content(text):
     """Generate simple social-media engagement metrics."""
 
     words = text.split()
+
     word_count = len(words)
     character_count = len(text)
 
@@ -61,6 +82,9 @@ def analyze_content(text):
         for keyword in cta_keywords
     )
 
+    # -----------------------------------------------------
+    # ENGAGEMENT SCORE
+    # -----------------------------------------------------
     score = 0
 
     if question_count > 0:
@@ -89,6 +113,9 @@ def analyze_content(text):
 
     score = min(score, 100)
 
+    # -----------------------------------------------------
+    # SUGGESTIONS
+    # -----------------------------------------------------
     suggestions = []
 
     if hashtag_count == 0:
@@ -131,33 +158,47 @@ def analyze_content(text):
     }
 
 
+# ---------------------------------------------------------
+# PDF TEXT EXTRACTION
+# ---------------------------------------------------------
 def extract_text_from_pdf(filepath):
-    """Extract normal PDF text or use OCR for scanned PDFs."""
+    """
+    Extract selectable text from a PDF.
+
+    If the PDF contains no selectable text,
+    render each page as an image and use OCR.
+    """
 
     document = pymupdf.open(filepath)
 
     try:
-        # Check whether the PDF is valid/openable
         if document.page_count == 0:
             return ""
 
-        text = ""
+        # ---------------------------------------------
+        # FIRST: NORMAL PDF TEXT EXTRACTION
+        # ---------------------------------------------
+        text_parts = []
 
-        # First try normal PDF text extraction
         for page in document:
-            text += page.get_text()
+            page_text = page.get_text()
+            if page_text:
+                text_parts.append(page_text)
 
-        text = text.strip()
+        text = "\n\n".join(text_parts).strip()
 
-        # If no selectable text exists, use OCR
+        # ---------------------------------------------
+        # SECOND: OCR FOR SCANNED PDF
+        # ---------------------------------------------
         if not text:
 
-            ocr_text = []
+            ocr_parts = []
 
             for page in document:
 
                 pix = page.get_pixmap(
-                    matrix=pymupdf.Matrix(2, 2)
+                    matrix=pymupdf.Matrix(2, 2),
+                    alpha=False
                 )
 
                 image = Image.frombytes(
@@ -166,14 +207,19 @@ def extract_text_from_pdf(filepath):
                     pix.samples
                 )
 
-                page_text = pytesseract.image_to_string(
-                    image,
-                    lang="eng"
-                )
+                try:
+                    page_text = pytesseract.image_to_string(
+                        image,
+                        lang="eng"
+                    )
 
-                ocr_text.append(page_text)
+                    if page_text:
+                        ocr_parts.append(page_text)
 
-            text = "\n\n".join(ocr_text).strip()
+                finally:
+                    image.close()
+
+            text = "\n\n".join(ocr_parts).strip()
 
         return text
 
@@ -181,17 +227,33 @@ def extract_text_from_pdf(filepath):
         document.close()
 
 
+# ---------------------------------------------------------
+# IMAGE OCR
+# ---------------------------------------------------------
 def extract_text_from_image(filepath):
-    """Extract text from an image using Tesseract OCR."""
+    """Extract text from PNG/JPG/JPEG using Tesseract OCR."""
 
     image = Image.open(filepath)
 
     try:
-        # Verify that the image is readable
+        # Verify image integrity
         image.verify()
 
-        # Reopen after verify()
-        image = Image.open(filepath)
+    except Exception as e:
+        raise ValueError(
+            "The uploaded image is corrupted or invalid."
+        ) from e
+
+    finally:
+        image.close()
+
+    # Reopen image after verify()
+    image = Image.open(filepath)
+
+    try:
+        # Convert to RGB for reliable OCR
+        if image.mode != "RGB":
+            image = image.convert("RGB")
 
         text = pytesseract.image_to_string(
             image,
@@ -204,15 +266,23 @@ def extract_text_from_image(filepath):
         image.close()
 
 
+# ---------------------------------------------------------
+# FILE TOO LARGE
+# ---------------------------------------------------------
 @app.errorhandler(413)
 def file_too_large(error):
+
     return render_template(
         "index.html",
         error="File is too large. Maximum allowed size is 10 MB.",
-        extracted_text=""
+        extracted_text="",
+        analysis=None
     ), 413
 
 
+# ---------------------------------------------------------
+# MAIN ROUTE
+# ---------------------------------------------------------
 @app.route("/", methods=["GET", "POST"])
 def home():
 
@@ -222,7 +292,9 @@ def home():
 
     if request.method == "POST":
 
-        # 1. Check whether a file was submitted
+        # ---------------------------------------------
+        # 1. Check file field
+        # ---------------------------------------------
         if "file" not in request.files:
 
             error = "No file was uploaded."
@@ -236,10 +308,15 @@ def home():
 
         file = request.files["file"]
 
+        # ---------------------------------------------
         # 2. Check filename
+        # ---------------------------------------------
         if not file.filename:
 
-            error = "Please select a file before clicking Analyze Content."
+            error = (
+                "Please select a file before clicking "
+                "Analyze Content."
+            )
 
             return render_template(
                 "index.html",
@@ -248,7 +325,9 @@ def home():
                 analysis=None
             )
 
+        # ---------------------------------------------
         # 3. Check extension
+        # ---------------------------------------------
         if not allowed_file(file.filename):
 
             error = (
@@ -263,10 +342,16 @@ def home():
                 analysis=None
             )
 
-        # 4. Generate a safe unique filename
-        extension = file.filename.rsplit(".", 1)[1].lower()
+        # ---------------------------------------------
+        # 4. Generate safe unique filename
+        # ---------------------------------------------
+        extension = file.filename.rsplit(
+            ".", 1
+        )[1].lower()
 
-        safe_filename = f"{uuid.uuid4().hex}.{extension}"
+        safe_filename = (
+            f"{uuid.uuid4().hex}.{extension}"
+        )
 
         filepath = os.path.join(
             app.config["UPLOAD_FOLDER"],
@@ -275,30 +360,35 @@ def home():
 
         try:
 
-            # 5. Save file
+            # -----------------------------------------
+            # 5. Save uploaded file
+            # -----------------------------------------
             file.save(filepath)
 
-            # 6. Check that something was actually saved
             if not os.path.exists(filepath):
-                error = "The uploaded file could not be saved."
 
-                return render_template(
-                    "index.html",
-                    error=error,
-                    extracted_text="",
-                    analysis=None
+                raise IOError(
+                    "Uploaded file could not be saved."
                 )
 
-            # 7. Extract text
+            # -----------------------------------------
+            # 6. Extract text
+            # -----------------------------------------
             if extension == "pdf":
 
-                extracted_text = extract_text_from_pdf(filepath)
+                extracted_text = extract_text_from_pdf(
+                    filepath
+                )
 
             else:
 
-                extracted_text = extract_text_from_image(filepath)
+                extracted_text = extract_text_from_image(
+                    filepath
+                )
 
-            # 8. Check whether extraction produced anything
+            # -----------------------------------------
+            # 7. Check extracted text
+            # -----------------------------------------
             if not extracted_text.strip():
 
                 error = (
@@ -313,8 +403,12 @@ def home():
                     analysis=None
                 )
 
-            # 9. Analyze extracted content
-            analysis = analyze_content(extracted_text)
+            # -----------------------------------------
+            # 8. Analyze content
+            # -----------------------------------------
+            analysis = analyze_content(
+                extracted_text
+            )
 
         except pymupdf.FileDataError:
 
@@ -323,6 +417,21 @@ def home():
                 "Please upload a valid PDF file."
             )
 
+        except pytesseract.TesseractNotFoundError:
+
+            error = (
+                "OCR engine is not available on the server. "
+                "Please contact the administrator."
+            )
+
+            print(
+                "Tesseract executable was not found."
+            )
+
+        except ValueError as e:
+
+            error = str(e)
+
         except Exception as e:
 
             error = (
@@ -330,17 +439,27 @@ def home():
                 "Please check the file and try again."
             )
 
-            print("Processing error:", e)
+            print(
+                "Processing error:",
+                repr(e)
+            )
 
         finally:
 
-            # Delete uploaded file after processing
+            # -----------------------------------------
+            # 9. Delete temporary uploaded file
+            # -----------------------------------------
             if os.path.exists(filepath):
 
                 try:
                     os.remove(filepath)
-                except Exception:
-                    pass
+
+                except Exception as cleanup_error:
+
+                    print(
+                        "Cleanup error:",
+                        repr(cleanup_error)
+                    )
 
     return render_template(
         "index.html",
@@ -350,5 +469,13 @@ def home():
     )
 
 
+# ---------------------------------------------------------
+# LOCAL DEVELOPMENT
+# ---------------------------------------------------------
 if __name__ == "__main__":
-    app.run(debug=True)
+
+    app.run(
+        host="0.0.0.0",
+        port=5000,
+        debug=True
+    )
