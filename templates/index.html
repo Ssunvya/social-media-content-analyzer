@@ -1,0 +1,679 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+
+    <title>Social Media Content Analyzer</title>
+
+    <style>
+
+        * {
+            box-sizing: border-box;
+        }
+
+        body {
+            margin: 0;
+            font-family: Arial, sans-serif;
+            background: #f4f7fb;
+            color: #1f2937;
+        }
+
+        .container {
+            width: 90%;
+            max-width: 1000px;
+            margin: 40px auto;
+        }
+
+        .header {
+            text-align: center;
+            margin-bottom: 30px;
+        }
+
+        .header h1 {
+            margin-bottom: 10px;
+            font-size: 36px;
+        }
+
+        .header p {
+            color: #6b7280;
+            font-size: 17px;
+        }
+
+        .card {
+            background: white;
+            border-radius: 16px;
+            padding: 35px;
+            box-shadow: 0 8px 25px rgba(0, 0, 0, 0.08);
+        }
+
+        .upload-area {
+            border: 2px dashed #9ca3af;
+            border-radius: 14px;
+            padding: 50px 20px;
+            text-align: center;
+            cursor: pointer;
+            transition: 0.2s;
+        }
+
+        .upload-area:hover {
+            border-color: #2563eb;
+            background: #f8fbff;
+        }
+
+        .upload-area.dragover {
+            border-color: #2563eb;
+            background: #eff6ff;
+        }
+
+        .upload-icon {
+            font-size: 50px;
+            margin-bottom: 15px;
+        }
+
+        .upload-area h2 {
+            margin: 10px 0;
+        }
+
+        .upload-area p {
+            color: #6b7280;
+        }
+
+        input[type="file"] {
+            display: none;
+        }
+
+        .file-name {
+            margin-top: 20px;
+            font-weight: bold;
+            color: #2563eb;
+        }
+
+        button {
+            width: 100%;
+            margin-top: 25px;
+            padding: 14px;
+            border: none;
+            border-radius: 10px;
+            background: #2563eb;
+            color: white;
+            font-size: 16px;
+            font-weight: bold;
+            cursor: pointer;
+        }
+
+        button:hover {
+            background: #1d4ed8;
+        }
+
+        button:disabled {
+            background: #9ca3af;
+            cursor: not-allowed;
+        }
+
+        .loading {
+            display: none;
+            text-align: center;
+            margin-top: 20px;
+            color: #2563eb;
+            font-weight: bold;
+        }
+
+        .supported {
+            text-align: center;
+            margin-top: 20px;
+            color: #6b7280;
+            font-size: 14px;
+        }
+
+        .error {
+            margin-top: 20px;
+            padding: 15px;
+            background: #fee2e2;
+            color: #991b1b;
+            border-radius: 8px;
+        }
+
+        /* =========================
+           ANALYSIS RESULTS
+           ========================= */
+
+        .analysis {
+            margin-top: 35px;
+        }
+
+        .analysis-title {
+            margin-bottom: 20px;
+        }
+
+        .analysis-title h2 {
+            margin-bottom: 5px;
+        }
+
+        .analysis-title p {
+            color: #6b7280;
+            margin-top: 5px;
+        }
+
+        /* Engagement score */
+
+        .score-card {
+            background: #eff6ff;
+            border-radius: 14px;
+            padding: 25px;
+            text-align: center;
+            margin-bottom: 25px;
+        }
+
+        .score-label {
+            font-size: 16px;
+            color: #4b5563;
+            margin-bottom: 8px;
+        }
+
+        .score {
+            font-size: 52px;
+            font-weight: bold;
+            color: #2563eb;
+        }
+
+        .score-out-of {
+            color: #6b7280;
+            font-size: 16px;
+        }
+
+        /* Statistics */
+
+        .stats {
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 15px;
+            margin-bottom: 30px;
+        }
+
+        .stat-card {
+            background: #f9fafb;
+            border: 1px solid #e5e7eb;
+            border-radius: 12px;
+            padding: 20px;
+            text-align: center;
+        }
+
+        .stat-number {
+            font-size: 28px;
+            font-weight: bold;
+            color: #111827;
+        }
+
+        .stat-label {
+            margin-top: 7px;
+            color: #6b7280;
+            font-size: 14px;
+        }
+
+        /* CTA */
+
+        .cta-status {
+            padding: 15px;
+            border-radius: 10px;
+            margin-bottom: 25px;
+            font-weight: bold;
+        }
+
+        .cta-yes {
+            background: #dcfce7;
+            color: #166534;
+        }
+
+        .cta-no {
+            background: #fef3c7;
+            color: #92400e;
+        }
+
+        /* Suggestions */
+
+        .suggestions {
+            background: #f9fafb;
+            border-radius: 12px;
+            padding: 20px;
+            margin-bottom: 30px;
+        }
+
+        .suggestions h3 {
+            margin-top: 0;
+        }
+
+        .suggestions ul {
+            margin-bottom: 0;
+            padding-left: 22px;
+        }
+
+        .suggestions li {
+            margin-bottom: 10px;
+            line-height: 1.5;
+        }
+
+        /* Extracted text */
+
+        .result {
+            margin-top: 30px;
+        }
+
+        .result h2 {
+            margin-bottom: 15px;
+        }
+
+        .text-box {
+            background: #f9fafb;
+            border: 1px solid #e5e7eb;
+            border-radius: 10px;
+            padding: 20px;
+            white-space: pre-wrap;
+            max-height: 500px;
+            overflow-y: auto;
+            line-height: 1.6;
+        }
+
+        @media (max-width: 700px) {
+
+            .stats {
+                grid-template-columns: repeat(2, 1fr);
+            }
+
+            .header h1 {
+                font-size: 28px;
+            }
+
+            .card {
+                padding: 20px;
+            }
+
+        }
+
+    </style>
+
+</head>
+
+
+<body>
+
+<div class="container">
+
+    <!-- HEADER -->
+
+    <div class="header">
+
+        <h1>Social Media Content Analyzer</h1>
+
+        <p>
+            Upload your social media content and analyze
+            its engagement potential automatically.
+        </p>
+
+    </div>
+
+
+    <div class="card">
+
+        <!-- UPLOAD -->
+
+        <form method="POST"
+              enctype="multipart/form-data"
+              onsubmit="showLoading()">
+
+            <label class="upload-area" id="dropArea">
+
+                <div class="upload-icon">📄</div>
+
+                <h2>Upload your content</h2>
+
+                <p>
+                    Drag & drop your file here
+                    <br>
+                    or click to browse
+                </p>
+
+                <input
+                    type="file"
+                    name="file"
+                    id="fileInput"
+                    accept=".pdf,.png,.jpg,.jpeg"
+                    required
+                >
+
+                <div class="file-name" id="fileName">
+                    No file selected
+                </div>
+
+            </label>
+
+
+            <button type="submit" id="analyzeButton">
+                Analyze Content
+            </button>
+
+
+            <div class="loading" id="loading">
+                ⏳ Analyzing your document... Please wait.
+            </div>
+
+        </form>
+
+
+        <div class="supported">
+            Supported formats: PDF, PNG, JPG, JPEG
+        </div>
+
+
+        <!-- ERROR -->
+
+        {% if error %}
+
+            <div class="error">
+
+                <strong>Error:</strong>
+                {{ error }}
+
+            </div>
+
+        {% endif %}
+
+
+        <!-- =========================
+             ANALYSIS RESULTS
+             ========================= -->
+
+        {% if analysis %}
+
+        <div class="analysis">
+
+            <div class="analysis-title">
+
+                <h2>📊 Content Analysis</h2>
+
+                <p>
+                    Here's how your content performs
+                    from an engagement perspective.
+                </p>
+
+            </div>
+
+
+            <!-- ENGAGEMENT SCORE -->
+
+            <div class="score-card">
+
+                <div class="score-label">
+                    Engagement Score
+                </div>
+
+                <div class="score">
+                    {{ analysis.engagement_score }}
+                </div>
+
+                <div class="score-out-of">
+                    out of 100
+                </div>
+
+            </div>
+
+
+            <!-- STATISTICS -->
+
+            <div class="stats">
+
+                <div class="stat-card">
+
+                    <div class="stat-number">
+                        {{ analysis.word_count }}
+                    </div>
+
+                    <div class="stat-label">
+                        Words
+                    </div>
+
+                </div>
+
+
+                <div class="stat-card">
+
+                    <div class="stat-number">
+                        {{ analysis.character_count }}
+                    </div>
+
+                    <div class="stat-label">
+                        Characters
+                    </div>
+
+                </div>
+
+
+                <div class="stat-card">
+
+                    <div class="stat-number">
+                        {{ analysis.hashtag_count }}
+                    </div>
+
+                    <div class="stat-label">
+                        Hashtags
+                    </div>
+
+                </div>
+
+
+                <div class="stat-card">
+
+                    <div class="stat-number">
+                        {{ analysis.mention_count }}
+                    </div>
+
+                    <div class="stat-label">
+                        Mentions
+                    </div>
+
+                </div>
+
+
+                <div class="stat-card">
+
+                    <div class="stat-number">
+                        {{ analysis.question_count }}
+                    </div>
+
+                    <div class="stat-label">
+                        Questions
+                    </div>
+
+                </div>
+
+
+                <div class="stat-card">
+
+                    <div class="stat-number">
+
+                        {% if analysis.cta_detected %}
+                            ✓
+                        {% else %}
+                            ✗
+                        {% endif %}
+
+                    </div>
+
+                    <div class="stat-label">
+                        Call-to-Action
+                    </div>
+
+                </div>
+
+            </div>
+
+
+            <!-- CTA STATUS -->
+
+            {% if analysis.cta_detected %}
+
+                <div class="cta-status cta-yes">
+
+                    ✓ A call-to-action was detected in your content.
+
+                </div>
+
+            {% else %}
+
+                <div class="cta-status cta-no">
+
+                    ⚠ No clear call-to-action was detected.
+
+                </div>
+
+            {% endif %}
+
+
+            <!-- SUGGESTIONS -->
+
+            <div class="suggestions">
+
+                <h3>💡 Suggestions</h3>
+
+                <ul>
+
+                    {% for suggestion in analysis.suggestions %}
+
+                        <li>
+                            {{ suggestion }}
+                        </li>
+
+                    {% endfor %}
+
+                </ul>
+
+            </div>
+
+        </div>
+
+        {% endif %}
+
+
+        <!-- EXTRACTED TEXT -->
+
+        {% if extracted_text %}
+
+            <div class="result">
+
+                <h2>📝 Extracted Text</h2>
+
+                <div class="text-box">
+                    {{ extracted_text }}
+                </div>
+
+            </div>
+
+        {% endif %}
+
+
+    </div>
+
+</div>
+
+
+<script>
+
+    const fileInput =
+        document.getElementById("fileInput");
+
+    const dropArea =
+        document.getElementById("dropArea");
+
+    const fileName =
+        document.getElementById("fileName");
+
+
+    // File selection
+
+    fileInput.addEventListener(
+        "change",
+        function () {
+
+            if (this.files.length > 0) {
+
+                fileName.textContent =
+                    this.files[0].name;
+
+            }
+
+        }
+    );
+
+
+    // Drag over
+
+    dropArea.addEventListener(
+        "dragover",
+        function (event) {
+
+            event.preventDefault();
+
+            dropArea.classList.add("dragover");
+
+        }
+    );
+
+
+    // Drag leave
+
+    dropArea.addEventListener(
+        "dragleave",
+        function () {
+
+            dropArea.classList.remove("dragover");
+
+        }
+    );
+
+
+    // Drop
+
+    dropArea.addEventListener(
+        "drop",
+        function (event) {
+
+            event.preventDefault();
+
+            dropArea.classList.remove("dragover");
+
+            if (event.dataTransfer.files.length > 0) {
+
+                fileInput.files =
+                    event.dataTransfer.files;
+
+                fileName.textContent =
+                    event.dataTransfer.files[0].name;
+
+            }
+
+        }
+    );
+
+
+    // Loading state
+
+    function showLoading() {
+
+        document.getElementById("loading")
+            .style.display = "block";
+
+        document.getElementById("analyzeButton")
+            .disabled = true;
+
+        document.getElementById("analyzeButton")
+            .textContent = "Analyzing...";
+
+    }
+
+</script>
+
+
+</body>
+
+</html>
